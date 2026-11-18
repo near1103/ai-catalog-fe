@@ -1,24 +1,24 @@
 ﻿# AI Catalog Frontend
 
-Веб-интерфейс каталога товаров. Посетители просматривают товары и категории. Администраторы добавляют товары, загружают фотографии и выбирают категории вручную или с помощью ИИ-подсказок.
+A web interface for browsing products and categories. Admins can add products, upload photos, and assign categories manually or with AI suggestions.
 
-Интерфейс работает на Next.js, получает данные из Spring Boot API и использует Firebase Authentication для входа в админку.
+The frontend uses Next.js, connects to a Spring Boot API, and uses Firebase Authentication for admin sign-in.
 
-## Локальный запуск
+## Run locally
 
-1. Установите зависимости командой `npm ci`.
-2. Запустите Spring Boot API. По умолчанию фронтенд ожидает его по адресу `http://localhost:8080`. В настройках бэкенда разрешите запросы с фронтенда через `APP_CORS_ALLOWED_ORIGINS=http://localhost:3000`.
-3. Скопируйте `.env.local.example` в `.env.local`. Если у вас уже есть настроенный `.env`, используйте его. Укажите адрес API в `NEXT_PUBLIC_API_URL`, если он отличается от значения по умолчанию.
-4. Выполните `npm run dev` и откройте [каталог](http://localhost:3000/catalog).
+1. Install dependencies with `npm ci`.
+2. Start the Spring Boot API. The frontend expects it at `http://localhost:8080` by default. Set `APP_CORS_ALLOWED_ORIGINS=http://localhost:3000` in the backend configuration.
+3. Copy `.env.local.example` to `.env.local`, or use your existing `.env` if it is already configured. Set `NEXT_PUBLIC_API_URL` if your API runs at a different address.
+4. Run `npm run dev` and open the [catalog](http://localhost:3000/catalog).
 
-## Вход в админку
+## Admin sign-in
 
-1. В настройках проекта Firebase откройте конфигурацию веб-приложения. Перенесите `apiKey`, `authDomain`, `projectId` и `appId` в соответствующие переменные `NEXT_PUBLIC_FIREBASE_*`.
-2. В Firebase Authentication включите вход по Email/Password или через Google. Для входа через Google добавьте `localhost` в список разрешённых доменов, если его там нет.
-3. Выдайте пользователю право `admin: true` через `AdminClaimsCommand` по инструкции в README бэкенда.
-4. Перезапустите фронтенд после изменения настроек и войдите через [страницу админки](http://localhost:3000/admin/login).
+1. In the Firebase project settings, find your web app configuration. Copy `apiKey`, `authDomain`, `projectId`, and `appId` into the matching `NEXT_PUBLIC_FIREBASE_*` variables.
+2. In Firebase Authentication, enable Email/Password or Google sign-in. For Google sign-in, add `localhost` to the authorized domains if needed.
+3. Grant your user the `admin: true` claim using `AdminClaimsCommand` as described in the backend README.
+4. Restart the frontend after changing environment settings, then open the [admin sign-in page](http://localhost:3000/admin/login).
 
-## Проверки
+## Checks
 
 ```sh
 npm run format:check
