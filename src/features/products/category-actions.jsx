@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { adminApi } from '@/lib/api/adminApi';
 import { ErrorMessage, Field } from '@/components/ui/shared';
 import { categoryPath, categorySelection, isCategorySelectionValid } from '@/utils/categories';
+import { CreateSuggestedCategory } from './create-suggested-category';
 
 const schema = z.object({
   rootId: z.string().min(1, 'Choose a department'),
@@ -19,6 +20,7 @@ const schema = z.object({
 const version = product =>
   JSON.stringify([product.id, product.categoryId, product.categorySource, product.aiSuggestion]);
 const recommendation = (categories, suggestion) => {
+  if (suggestion?.type === 'NEW_CATEGORY') return categorySelection(categories, null);
   const path = categorySelection(categories, suggestion?.leafCategoryId);
   return path.rootId === suggestion?.rootCategoryId &&
     path.groupId === suggestion?.sectionCategoryId
@@ -30,9 +32,18 @@ const initialSelection = (categories, product) => {
   return assigned.leafId ? assigned : recommendation(categories, product.aiSuggestion);
 };
 
-export function CategoryActions({ product, categories, refresh, disabled = false }) {
+export function CategoryActions({
+  product,
+  categories,
+  refresh,
+  disabled = false,
+  initialSuggestion,
+}) {
   const cache = useQueryClient();
+  const formId = useId();
   const [notice, setNotice] = useState('');
+  const [categoryImageError, setCategoryImageError] = useState(null);
+  const [showInitialError, setShowInitialError] = useState(true);
   const serverVersion = version(product);
   const synchronized = useRef(serverVersion);
   const {
@@ -73,8 +84,18 @@ export function CategoryActions({ product, categories, refresh, disabled = false
     mutationFn: () => adminApi.action(product.id, 'ai-suggestion'),
     retry: false,
     onSuccess: updated => {
-      update(updated, recommendation(categories, updated.aiSuggestion));
-      setNotice('Recommendation ready. Review the selected categories before applying.');
+      const proposesPath = updated.aiSuggestion?.type === 'NEW_CATEGORY';
+      update(
+        updated,
+        proposesPath
+          ? categorySelection(categories, updated.categoryId)
+          : recommendation(categories, updated.aiSuggestion),
+      );
+      setNotice(
+        proposesPath
+          ? 'Recommendation ready. Review the proposed category path.'
+          : 'Recommendation ready. Review the selected categories before applying.',
+      );
     },
     onSettled: refresh,
   });
@@ -91,8 +112,55 @@ export function CategoryActions({ product, categories, refresh, disabled = false
     },
     onSettled: refresh,
   });
-  const busy = disabled || manual.isPending || suggest.isPending || decision.isPending;
+  const createCategory = useMutation({
+    mutationFn: async ({ body, imageFile }) => {
+      setCategoryImageError(null);
+      const updated = await adminApi.action(
+        product.id,
+        'ai-suggestion/create-category',
+        'POST',
+        body,
+      );
+      if (imageFile) {
+        try {
+          await adminApi.uploadCategoryImage(updated.categoryId, imageFile);
+        } catch (error) {
+          setCategoryImageError(error);
+        }
+      }
+      return updated;
+    },
+    retry: false,
+    onSuccess: async updated => {
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ['admin-categories'] }),
+        cache.invalidateQueries({ queryKey: ['categories'] }),
+        cache.invalidateQueries({ queryKey: ['category'] }),
+      ]);
+      const freshCategories = cache.getQueryData(['admin-categories']) || categories;
+      update(updated, categorySelection(freshCategories, updated.categoryId));
+      setNotice('Category path created and assigned.');
+      await refresh();
+    },
+  });
+  const generating = suggest.isPending || initialSuggestion?.status === 'pending';
+  const busy =
+    disabled || manual.isPending || generating || decision.isPending || createCategory.isPending;
+  const suggestionError = suggest.error || (showInitialError ? initialSuggestion?.error : null);
   const suggestion = product.aiSuggestion;
+  const isNewCategory = suggestion?.type === 'NEW_CATEGORY';
+  const proposal = isNewCategory ? suggestion.proposal : null;
+  const parents = categoryPath(categories, proposal?.parentId);
+  const validProposal =
+    proposal?.id &&
+    Array.isArray(proposal.names) &&
+    proposal.names.length > 0 &&
+    proposal.names.every(name => typeof name === 'string' && name.trim().length > 0) &&
+    parents.length + proposal.names.length === 3 &&
+    parents.every((category, index) => category.level === index + 1) &&
+    (proposal.parentId === null
+      ? parents.length === 0
+      : typeof proposal.parentId === 'string' && parents.at(-1)?.id === proposal.parentId);
   const suggested = recommendation(categories, suggestion);
   const hasRecommendation = !!suggested.leafId;
   const matchesRecommendation =
@@ -112,6 +180,7 @@ export function CategoryActions({ product, categories, refresh, disabled = false
     category => category.level === 3 && categorySelection(categories, category.id).leafId,
   );
   const clearErrors = () => {
+    setShowInitialError(false);
     manual.reset();
     suggest.reset();
     decision.reset();
@@ -147,34 +216,42 @@ export function CategoryActions({ product, categories, refresh, disabled = false
       <button
         type="button"
         className="category-ai-button"
-        disabled={busy || !hasCategoryTree}
+        disabled={busy}
         onClick={() => {
           clearErrors();
           suggest.mutate();
         }}
       >
-        {suggest.isPending ? (
-          <LoaderCircle size={18} className="animate-spin" aria-hidden="true" />
+        {generating ? (
+          <LoaderCircle size={18} className="motion-safe:animate-spin" aria-hidden="true" />
         ) : (
           <Sparkles size={18} aria-hidden="true" />
         )}
-        {suggest.isPending
-          ? 'Generating recommendation…'
+        {generating
+          ? suggestion
+            ? 'Generating a new recommendation…'
+            : 'Generating recommendation…'
           : suggestion
             ? 'Generate a new recommendation'
             : 'Suggest with AI'}
       </button>
+      {generating && (
+        <div className="category-ai-progress" role="status">
+          <div className="category-ai-progress-track" aria-hidden="true" />
+          <span>AI is reviewing the saved product details.</span>
+        </div>
+      )}
       <p className="category-ai-help">
         {hasCategoryTree
           ? 'Uses the saved product name, description, and specifications.'
-          : 'Add a complete three-level category path to enable AI suggestions.'}
+          : 'AI can propose a new path when the catalog has no complete categories.'}
       </p>
       {!hasCategoryTree && (
         <Link className="table-link" href="/admin/categories">
           Manage categories
         </Link>
       )}
-      <form onSubmit={submit}>
+      <form id={formId} onSubmit={submit}>
         <div className="category-selectors">
           <Field label="1. Department" error={errors.rootId}>
             <select
@@ -239,63 +316,101 @@ export function CategoryActions({ product, categories, refresh, disabled = false
             </select>
           </Field>
         </div>
-        <ErrorMessage error={manual.error || suggest.error || decision.error} />
-        {suggestion && (
-          <div className="category-recommendation">
-            <div className="category-recommendation-heading">
-              <Sparkles size={16} aria-hidden="true" />
-              <strong>AI recommendation</strong>
-            </div>
-            <p>{suggestion.reason}</p>
-            {!hasRecommendation ? (
-              <p className="muted">
-                The recommended category is no longer available. Choose another category or request
-                a new recommendation.
-              </p>
-            ) : (
-              !matchesRecommendation && (
-                <button
-                  type="button"
-                  className="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    reset(suggested);
-                    setNotice('');
-                  }}
-                >
-                  Use recommendation in the lists
-                </button>
-              )
-            )}
-            <button
-              type="button"
-              className="ghost"
-              disabled={busy}
-              onClick={() => {
-                clearErrors();
-                decision.mutate(false);
-              }}
-            >
-              Dismiss recommendation
-            </button>
-          </div>
-        )}
-        {notice && (
-          <p className="category-action-notice" role="status">
-            {notice}
-          </p>
-        )}
-        <button type="submit" className="category-apply-button" disabled={busy || !complete}>
-          {manual.isPending || decision.isPending
-            ? 'Saving…'
-            : matchesRecommendation
-              ? 'Accept recommendation'
-              : 'Apply category'}
-        </button>
-        {!complete && (
-          <p className="category-selection-help">Select all three levels to apply a category.</p>
-        )}
       </form>
+      <ErrorMessage error={manual.error || suggestionError || decision.error} />
+      {suggestion && (
+        <div className="category-recommendation" aria-busy={generating}>
+          <div className="category-recommendation-heading">
+            <Sparkles size={16} aria-hidden="true" />
+            <strong>
+              {generating
+                ? 'Previous AI recommendation'
+                : isNewCategory
+                  ? 'Proposed category path'
+                  : 'AI recommendation'}
+            </strong>
+          </div>
+          <p>{suggestion.reason}</p>
+          {isNewCategory ? (
+            validProposal ? (
+              <>
+                <p className="category-proposed-path">
+                  {[...parents.map(parent => parent.name), ...proposal.names].join(' / ')}
+                </p>
+                <CreateSuggestedCategory
+                  key={proposal.id}
+                  proposal={proposal}
+                  parents={parents}
+                  disabled={busy}
+                  mutation={createCategory}
+                />
+              </>
+            ) : (
+              <p className="muted">
+                The proposed path is unavailable. Request a new recommendation.
+              </p>
+            )
+          ) : !hasRecommendation ? (
+            <p className="muted">
+              The recommended category is no longer available. Choose another category or request a
+              new recommendation.
+            </p>
+          ) : (
+            !matchesRecommendation && (
+              <button
+                type="button"
+                className="ghost"
+                disabled={busy}
+                onClick={() => {
+                  reset(suggested);
+                  setNotice('');
+                }}
+              >
+                Use recommendation in the lists
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            className="ghost"
+            disabled={busy}
+            onClick={() => {
+              clearErrors();
+              decision.mutate(false);
+            }}
+          >
+            Dismiss recommendation
+          </button>
+        </div>
+      )}
+      {notice && (
+        <p className="category-action-notice" role="status">
+          {notice}
+        </p>
+      )}
+      {categoryImageError && (
+        <>
+          <ErrorMessage error={`Category image upload failed. ${categoryImageError.message}`} />
+          <Link className="table-link" href="/admin/categories">
+            Add the image in Manage categories
+          </Link>
+        </>
+      )}
+      <button
+        type="submit"
+        form={formId}
+        className="category-apply-button"
+        disabled={busy || !complete}
+      >
+        {manual.isPending || decision.isPending
+          ? 'Saving…'
+          : matchesRecommendation
+            ? 'Accept recommendation'
+            : 'Apply category'}
+      </button>
+      {!complete && (
+        <p className="category-selection-help">Select all three levels to apply a category.</p>
+      )}
     </section>
   );
 }

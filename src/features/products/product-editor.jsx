@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useMutationState, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/api/adminApi';
 import { ProductForm } from './product-form';
 import { QueryState, ErrorMessage, Status } from '@/components/ui/shared';
@@ -10,6 +10,8 @@ import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { ImageUpload } from '@/components/ui/image-upload';
 import { ConfirmButton } from '@/components/ui/confirm-button';
 import { CategoryActions } from './category-actions';
+
+const draftSuggestionKey = ['draft-category-suggestion'];
 
 function ProductImages({ product, refresh }) {
   const upload = useMutation({
@@ -78,6 +80,20 @@ export default function ProductEditor({ id }) {
     enabled: !!id,
   });
   const categories = useQuery({ queryKey: ['admin-categories'], queryFn: adminApi.categories });
+  const draftSuggestion = useMutation({
+    mutationKey: draftSuggestionKey,
+    mutationFn: productId => adminApi.action(productId, 'ai-suggestion'),
+    retry: false,
+    onSuccess: (_, productId) =>
+      cache.invalidateQueries({ queryKey: ['admin-product', productId] }),
+  });
+  const initialSuggestion = useMutationState({
+    filters: {
+      mutationKey: draftSuggestionKey,
+      predicate: mutation => !!id && mutation.state.variables === id,
+    },
+    select: mutation => mutation.state,
+  }).at(-1);
   const refresh = () =>
     Promise.all([
       ...(id ? [cache.invalidateQueries({ queryKey: ['admin-product', id] })] : []),
@@ -89,10 +105,12 @@ export default function ProductEditor({ id }) {
     mutationFn: body => (id ? adminApi.updateProduct(id, body) : adminApi.createProduct(body)),
     onSuccess: async savedProduct => {
       setNotice('Product saved.');
-      await refresh();
       if (!id) {
+        cache.setQueryData(['admin-product', savedProduct.id], savedProduct);
+        draftSuggestion.mutate(savedProduct.id);
         router.replace('/admin/products/' + encodeURIComponent(savedProduct.id));
       }
+      await refresh();
     },
   });
   const action = useMutation({
@@ -142,7 +160,7 @@ export default function ProductEditor({ id }) {
             <section className="panel">
               <h2>Categorization</h2>
               <p className="muted">
-                Save the product first to choose its category or request an AI recommendation.
+                Saving the draft starts an AI recommendation. You can review it in the editor.
               </p>
             </section>
           )}
@@ -158,6 +176,7 @@ export default function ProductEditor({ id }) {
                       categories={categories.data}
                       refresh={refresh}
                       disabled={save.isPending || action.isPending}
+                      initialSuggestion={initialSuggestion}
                     />
                   )}
                 </div>

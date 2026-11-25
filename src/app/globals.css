@@ -1346,6 +1346,40 @@ tbody tr:hover {
   font-size: 13px;
   min-height: 44px;
 }
+.category-ai-progress {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.category-ai-progress-track {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #dce6fa;
+}
+.category-ai-progress-track::before {
+  content: '';
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .category-ai-progress-track::before {
+    animation: category-ai-progress 1.25s ease-in-out infinite alternate;
+  }
+}
+@keyframes category-ai-progress {
+  to {
+    transform: translateX(178%);
+  }
+}
+.category-recommendation[aria-busy='true'] {
+  opacity: 0.72;
+}
 .category-ai-help,
 .category-selection-help {
   font-size: 11px;
@@ -1377,17 +1411,37 @@ tbody tr:hover {
   color: var(--accent);
   margin-bottom: 10px;
 }
-.category-recommendation p {
+.category-recommendation > p {
   font-size: 12px;
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   margin-bottom: 10px;
 }
-.category-recommendation button {
+.category-recommendation > button {
   display: inline-flex;
   font-size: 11px;
   padding: 6px 8px;
+}
+.category-proposed-path {
+  font-weight: 600;
+}
+.category-proposal-dialog .field {
+  margin: 14px 0;
+}
+.category-proposal-image {
+  margin: 16px 0;
+}
+.category-proposal-image legend {
+  font-weight: 600;
+}
+.category-proposal-image > p {
+  margin: 6px 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.category-proposal-dialog .confirm-dialog-actions button {
+  min-height: 38px;
 }
 .category-action-notice {
   font-size: 12px;
