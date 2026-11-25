@@ -18,7 +18,7 @@ test('public request omits bearer; parses plain array', async () => {
   setTokenProvider(() => 'private');
   global.fetch = async (url, options) => {
     assert.equal(options.headers.has('Authorization'), false);
-    assert.ok(url.endsWith('/api/public/products'));
+    assert.equal(url, '/api/public/products');
     return Response.json([{ id: 'p' }]);
   };
   assert.deepEqual(await apiFetch('/api/public/products'), [{ id: 'p' }]);

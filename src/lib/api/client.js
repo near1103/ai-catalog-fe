@@ -22,10 +22,11 @@ export async function apiFetch(path, { admin = false, body, ...options } = {}) {
       }
       headers.set('Authorization', 'Bearer ' + token);
     }
-    return fetch(
-      (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080').replace(/\/+$/, '') + path,
-      { ...options, headers, body: body === undefined || multipart ? body : JSON.stringify(body) },
-    );
+    return fetch(path, {
+      ...options,
+      headers,
+      body: body === undefined || multipart ? body : JSON.stringify(body),
+    });
   }
   let response;
   try {
